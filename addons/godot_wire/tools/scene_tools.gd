@@ -96,6 +96,52 @@ func get_tools() -> Array:
 				},
 				"required": ["path"]
 			}
+		},
+		{
+			"name": "get_node_children",
+			"description": "Get the direct children of a node",
+			"inputSchema": {
+				"type": "object",
+				"properties": {
+					"path": {"type": "string", "description": "Path to the node"}
+				},
+				"required": ["path"]
+			}
+		},
+		{
+			"name": "get_node_methods",
+			"description": "List all methods available on a node",
+			"inputSchema": {
+				"type": "object",
+				"properties": {
+					"path": {"type": "string", "description": "Path to the node"},
+					"filter": {"type": "string", "description": "Filter methods by name substring"}
+				},
+				"required": ["path"]
+			}
+		},
+		{
+			"name": "get_node_signals",
+			"description": "List all signals available on a node",
+			"inputSchema": {
+				"type": "object",
+				"properties": {
+					"path": {"type": "string", "description": "Path to the node"}
+				},
+				"required": ["path"]
+			}
+		},
+		{
+			"name": "attach_script",
+			"description": "Attach an existing script to a node",
+			"inputSchema": {
+				"type": "object",
+				"properties": {
+					"node_path": {"type": "string", "description": "Path to the node"},
+					"script_path": {"type": "string", "description": "Resource path to the .gd script"}
+				},
+				"required": ["node_path", "script_path"]
+			}
 		}
 	]
 
@@ -117,6 +163,14 @@ func call_tool(tool_name: String, args: Dictionary) -> Dictionary:
 			return _instantiate_scene(args)
 		"get_node_info":
 			return _get_node_info(args)
+		"get_node_children":
+			return _get_node_children(args)
+		"get_node_methods":
+			return _get_node_methods(args)
+		"get_node_signals":
+			return _get_node_signals(args)
+		"attach_script":
+			return _attach_script(args)
 		_:
 			return _error("Unknown tool: %s" % tool_name)
 
@@ -271,3 +325,63 @@ func _get_node_info(args: Dictionary) -> Dictionary:
 			if val != null:
 				info += "  %s = %s\n" % [prop.name, str(val)]
 	return _success(info)
+
+func _get_node_children(args: Dictionary) -> Dictionary:
+	var path: String = args.get("path", "")
+	var node := _resolve_node(path)
+	if node == null:
+		return _error("Node not found: %s" % path)
+	if node.get_child_count() == 0:
+		return _success("%s has no children" % node.name)
+	var lines: Array = ["%s has %d child(ren):" % [node.name, node.get_child_count()]]
+	for child in node.get_children():
+		lines.append("  %s [%s]" % [child.name, child.get_class()])
+	return _success("\n".join(lines))
+
+func _get_node_methods(args: Dictionary) -> Dictionary:
+	var path: String = args.get("path", "")
+	var filter_str: String = args.get("filter", "")
+	var node := _resolve_node(path)
+	if node == null:
+		return _error("Node not found: %s" % path)
+	var methods := node.get_method_list()
+	var lines: Array = []
+	for m in methods:
+		var name: String = m.name
+		if not filter_str.is_empty() and name.findn(filter_str) == -1:
+			continue
+		var arg_names: Array = []
+		for arg in m.args:
+			arg_names.append(arg.name)
+		lines.append("  %s(%s)" % [name, ", ".join(arg_names)])
+	lines.sort()
+	return _success("Methods on %s (%d):\n%s" % [node.name, lines.size(), "\n".join(lines)])
+
+func _get_node_signals(args: Dictionary) -> Dictionary:
+	var path: String = args.get("path", "")
+	var node := _resolve_node(path)
+	if node == null:
+		return _error("Node not found: %s" % path)
+	var signals := node.get_signal_list()
+	var lines: Array = []
+	for sig in signals:
+		var arg_names: Array = []
+		for arg in sig.args:
+			arg_names.append(arg.name)
+		lines.append("  %s(%s)" % [sig.name, ", ".join(arg_names)])
+	lines.sort()
+	return _success("Signals on %s (%d):\n%s" % [node.name, lines.size(), "\n".join(lines)])
+
+func _attach_script(args: Dictionary) -> Dictionary:
+	var node_path: String = args.get("node_path", "")
+	var script_path: String = args.get("script_path", "")
+	var node := _resolve_node(node_path)
+	if node == null:
+		return _error("Node not found: %s" % node_path)
+	if not FileAccess.file_exists(script_path):
+		return _error("Script not found: %s" % script_path)
+	var script: GDScript = load(script_path) as GDScript
+	if script == null:
+		return _error("Could not load script: %s" % script_path)
+	node.set_script(script)
+	return _success("Attached %s to %s" % [script_path, node.name])

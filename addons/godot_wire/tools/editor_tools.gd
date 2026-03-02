@@ -1,5 +1,5 @@
 extends GodotWireTool
-## Editor state, screenshots, play/stop controls, and selection tools.
+## Editor state, screenshots, play/stop controls, selection, project settings, and scene management.
 
 func get_tools() -> Array:
 	return [
@@ -47,6 +47,58 @@ func get_tools() -> Array:
 				"properties": {},
 				"required": []
 			}
+		},
+		{
+			"name": "open_scene",
+			"description": "Open a scene file in the editor",
+			"inputSchema": {
+				"type": "object",
+				"properties": {
+					"path": {"type": "string", "description": "Resource path of the scene (e.g. res://scenes/main.tscn)"}
+				},
+				"required": ["path"]
+			}
+		},
+		{
+			"name": "save_scene",
+			"description": "Save the currently edited scene to disk",
+			"inputSchema": {
+				"type": "object",
+				"properties": {},
+				"required": []
+			}
+		},
+		{
+			"name": "get_project_setting",
+			"description": "Read a Godot project setting value",
+			"inputSchema": {
+				"type": "object",
+				"properties": {
+					"setting": {"type": "string", "description": "Setting path (e.g. application/config/name, display/window/size/viewport_width)"}
+				},
+				"required": ["setting"]
+			}
+		},
+		{
+			"name": "set_project_setting",
+			"description": "Set a Godot project setting value",
+			"inputSchema": {
+				"type": "object",
+				"properties": {
+					"setting": {"type": "string", "description": "Setting path"},
+					"value": {"description": "Value to set"}
+				},
+				"required": ["setting", "value"]
+			}
+		},
+		{
+			"name": "save_project_settings",
+			"description": "Save all project settings to project.godot",
+			"inputSchema": {
+				"type": "object",
+				"properties": {},
+				"required": []
+			}
 		}
 	]
 
@@ -62,6 +114,16 @@ func call_tool(tool_name: String, args: Dictionary) -> Dictionary:
 			return _get_editor_selection()
 		"get_editor_errors":
 			return _get_editor_errors()
+		"open_scene":
+			return _open_scene(args)
+		"save_scene":
+			return _save_scene()
+		"get_project_setting":
+			return _get_project_setting(args)
+		"set_project_setting":
+			return _set_project_setting(args)
+		"save_project_settings":
+			return _save_project_settings()
 		_:
 			return _error("Unknown tool: %s" % tool_name)
 
@@ -132,3 +194,43 @@ func _find_all_scripts(dir_path: String) -> Array:
 		file_name = dir.get_next()
 	dir.list_dir_end()
 	return results
+
+func _open_scene(args: Dictionary) -> Dictionary:
+	var path: String = args.get("path", "")
+	if not FileAccess.file_exists(path):
+		return _error("Scene not found: %s" % path)
+	_get_editor_interface().open_scene_from_path(path)
+	return _success("Opened scene: %s" % path)
+
+func _save_scene() -> Dictionary:
+	var root := _get_edited_scene_root()
+	if root == null:
+		return _error("No scene is currently open")
+	var scene_path := root.scene_file_path
+	if scene_path.is_empty():
+		return _error("Scene has no file path — save manually first")
+	var packed := PackedScene.new()
+	packed.pack(root)
+	var err := ResourceSaver.save(packed, scene_path)
+	if err != OK:
+		return _error("Failed to save scene: %s" % error_string(err))
+	return _success("Saved scene: %s" % scene_path)
+
+func _get_project_setting(args: Dictionary) -> Dictionary:
+	var setting: String = args.get("setting", "")
+	if not ProjectSettings.has_setting(setting):
+		return _error("Setting not found: %s" % setting)
+	var val = ProjectSettings.get_setting(setting)
+	return _success("%s = %s" % [setting, str(val)])
+
+func _set_project_setting(args: Dictionary) -> Dictionary:
+	var setting: String = args.get("setting", "")
+	var value = args.get("value")
+	ProjectSettings.set_setting(setting, value)
+	return _success("Set %s = %s" % [setting, str(value)])
+
+func _save_project_settings() -> Dictionary:
+	var err := ProjectSettings.save()
+	if err != OK:
+		return _error("Failed to save project settings: %s" % error_string(err))
+	return _success("Project settings saved to project.godot")

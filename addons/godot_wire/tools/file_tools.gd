@@ -60,6 +60,56 @@ func get_tools() -> Array:
 				},
 				"required": ["query"]
 			}
+		},
+		{
+			"name": "create_file",
+			"description": "Create a new file (fails if it already exists)",
+			"inputSchema": {
+				"type": "object",
+				"properties": {
+					"path": {"type": "string", "description": "Resource path for the new file"},
+					"content": {"type": "string", "description": "File content"}
+				},
+				"required": ["path", "content"]
+			}
+		},
+		{
+			"name": "rename_file",
+			"description": "Rename or move a file",
+			"inputSchema": {
+				"type": "object",
+				"properties": {
+					"from": {"type": "string", "description": "Current resource path"},
+					"to": {"type": "string", "description": "New resource path"}
+				},
+				"required": ["from", "to"]
+			}
+		},
+		{
+			"name": "replace_string_in_file",
+			"description": "Search and replace text in a file",
+			"inputSchema": {
+				"type": "object",
+				"properties": {
+					"path": {"type": "string", "description": "Resource path of the file"},
+					"search": {"type": "string", "description": "Text to find"},
+					"replace": {"type": "string", "description": "Replacement text"}
+				},
+				"required": ["path", "search", "replace"]
+			}
+		},
+		{
+			"name": "create_resource",
+			"description": "Create a Godot resource file (.tres) of a given type",
+			"inputSchema": {
+				"type": "object",
+				"properties": {
+					"path": {"type": "string", "description": "Resource path (e.g. res://materials/red.tres)"},
+					"type": {"type": "string", "description": "Resource type (e.g. StandardMaterial3D, Environment, AudioBusLayout)"},
+					"properties": {"type": "object", "description": "Properties to set on the resource"}
+				},
+				"required": ["path", "type"]
+			}
 		}
 	]
 
@@ -75,6 +125,14 @@ func call_tool(tool_name: String, args: Dictionary) -> Dictionary:
 			return _list_directory(args)
 		"search_files":
 			return _search_files(args)
+		"create_file":
+			return _create_file(args)
+		"rename_file":
+			return _rename_file(args)
+		"replace_string_in_file":
+			return _replace_string_in_file(args)
+		"create_resource":
+			return _create_resource(args)
 		_:
 			return _error("Unknown tool: %s" % tool_name)
 
@@ -179,3 +237,74 @@ func _search_in_file(path: String, query: String, results: Array) -> void:
 				var prefix := ">> " if j == i else "   "
 				context_lines.append("%s%d: %s" % [prefix, j + 1, lines[j]])
 			results.append({"path": path, "line": i + 1, "context": "\n".join(context_lines)})
+
+func _create_file(args: Dictionary) -> Dictionary:
+	var path: String = args.get("path", "")
+	var content: String = args.get("content", "")
+	if FileAccess.file_exists(path):
+		return _error("File already exists: %s (use write_file to overwrite)" % path)
+	var dir_path := path.get_base_dir()
+	DirAccess.make_dir_recursive_absolute(dir_path)
+	var file := FileAccess.open(path, FileAccess.WRITE)
+	if file == null:
+		return _error("Could not create file: %s" % path)
+	file.store_string(content)
+	file.close()
+	_get_editor_interface().get_resource_filesystem().scan()
+	return _success("Created file: %s (%d bytes)" % [path, content.length()])
+
+func _rename_file(args: Dictionary) -> Dictionary:
+	var from: String = args.get("from", "")
+	var to: String = args.get("to", "")
+	if not FileAccess.file_exists(from):
+		return _error("Source file not found: %s" % from)
+	var dir_path := to.get_base_dir()
+	DirAccess.make_dir_recursive_absolute(dir_path)
+	var dir := DirAccess.open(from.get_base_dir())
+	if dir == null:
+		return _error("Could not access directory")
+	var err := dir.rename(from, to)
+	if err != OK:
+		return _error("Rename failed: %s" % error_string(err))
+	_get_editor_interface().get_resource_filesystem().scan()
+	return _success("Renamed %s -> %s" % [from, to])
+
+func _replace_string_in_file(args: Dictionary) -> Dictionary:
+	var path: String = args.get("path", "")
+	var search: String = args.get("search", "")
+	var replace_text: String = args.get("replace", "")
+	if not FileAccess.file_exists(path):
+		return _error("File not found: %s" % path)
+	var file := FileAccess.open(path, FileAccess.READ)
+	var content := file.get_as_text()
+	file.close()
+	var count := content.count(search)
+	if count == 0:
+		return _error("Search text not found in %s" % path)
+	content = content.replace(search, replace_text)
+	file = FileAccess.open(path, FileAccess.WRITE)
+	file.store_string(content)
+	file.close()
+	_get_editor_interface().get_resource_filesystem().scan()
+	return _success("Replaced %d occurrence(s) in %s" % [count, path])
+
+func _create_resource(args: Dictionary) -> Dictionary:
+	var path: String = args.get("path", "")
+	var res_type: String = args.get("type", "")
+	var props: Dictionary = args.get("properties", {})
+	if path.is_empty() or res_type.is_empty():
+		return _error("Path and type are required")
+	if not ClassDB.class_exists(res_type):
+		return _error("Unknown resource type: %s" % res_type)
+	var res: Resource = ClassDB.instantiate(res_type) as Resource
+	if res == null:
+		return _error("Could not create resource of type: %s" % res_type)
+	for key in props:
+		res.set(key, props[key])
+	var dir_path := path.get_base_dir()
+	DirAccess.make_dir_recursive_absolute(dir_path)
+	var err := ResourceSaver.save(res, path)
+	if err != OK:
+		return _error("Failed to save resource: %s" % error_string(err))
+	_get_editor_interface().get_resource_filesystem().scan()
+	return _success("Created %s resource at %s" % [res_type, path])
