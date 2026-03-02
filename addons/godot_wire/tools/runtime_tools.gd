@@ -131,7 +131,7 @@ func call_tool(tool_name: String, args: Dictionary) -> Dictionary:
 			return _error("Unknown tool: %s" % tool_name)
 
 func _game_screenshot() -> Dictionary:
-	var result := game_bridge.send_request("get_screenshot")
+	var result: Dictionary = game_bridge.send_request("get_screenshot")
 	if result.has("error"):
 		return _error(result["error"])
 	if result.has("image"):
@@ -139,19 +139,19 @@ func _game_screenshot() -> Dictionary:
 	return _error("No image in response")
 
 func _game_scene_tree() -> Dictionary:
-	var result := game_bridge.send_request("get_scene_tree")
+	var result: Dictionary = game_bridge.send_request("get_scene_tree")
 	if result.has("error"):
 		return _error(result["error"])
 	return _success(result.get("tree", "empty"))
 
 func _game_execute(args: Dictionary) -> Dictionary:
-	var result := game_bridge.send_request("execute_script", {"code": args.get("code", "")})
+	var result: Dictionary = game_bridge.send_request("execute_script", {"code": args.get("code", "")})
 	if result.has("error"):
 		return _error(result["error"])
 	return _success(result.get("text", "done"))
 
 func _game_get_props(args: Dictionary) -> Dictionary:
-	var result := game_bridge.send_request("get_node_properties", {
+	var result: Dictionary = game_bridge.send_request("get_node_properties", {
 		"path": args.get("path", ""),
 		"properties": args.get("properties", [])
 	})
@@ -164,7 +164,7 @@ func _game_get_props(args: Dictionary) -> Dictionary:
 	return _success(text)
 
 func _game_set_props(args: Dictionary) -> Dictionary:
-	var result := game_bridge.send_request("set_node_properties", {
+	var result: Dictionary = game_bridge.send_request("set_node_properties", {
 		"path": args.get("path", ""),
 		"properties": args.get("properties", {})
 	})
@@ -173,7 +173,7 @@ func _game_set_props(args: Dictionary) -> Dictionary:
 	return _success(result.get("text", "done"))
 
 func _game_monitor(args: Dictionary) -> Dictionary:
-	var result := game_bridge.send_request("monitor_properties", {
+	var result: Dictionary = game_bridge.send_request("monitor_properties", {
 		"nodes": args.get("nodes", [])
 	})
 	if result.has("error"):
@@ -189,7 +189,7 @@ func _game_monitor(args: Dictionary) -> Dictionary:
 	return _success(text)
 
 func _game_key(args: Dictionary) -> Dictionary:
-	var result := game_bridge.send_request("simulate_key", {
+	var result: Dictionary = game_bridge.send_request("simulate_key", {
 		"key": args.get("key", ""),
 		"pressed": args.get("pressed", true)
 	})
@@ -198,7 +198,7 @@ func _game_key(args: Dictionary) -> Dictionary:
 	return _success(result.get("text", "done"))
 
 func _game_action(args: Dictionary) -> Dictionary:
-	var result := game_bridge.send_request("simulate_action", {
+	var result: Dictionary = game_bridge.send_request("simulate_action", {
 		"action": args.get("action", ""),
 		"pressed": args.get("pressed", true),
 		"strength": args.get("strength", 1.0)
