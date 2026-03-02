@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="godot-wire.png" alt="GodotWire" width="400">
+  <img src="godot-wire.png" alt="GodotWire">
 </p>
 
 <h1 align="center">GodotWire</h1>
