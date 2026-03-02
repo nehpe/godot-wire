@@ -34,13 +34,15 @@ The server uses **Streamable HTTP** — send JSON-RPC 2.0 POST requests to `/mcp
 
 | Module | Tools | Description |
 |--------|-------|-------------|
-| `scene_tools` | 8 | Scene tree, nodes, instantiation |
+| `scene_tools` | 12 | Scene tree, nodes, instantiation, node details, attach script |
 | `script_tools` | 4 | Execute, create, edit, check errors |
 | `node_tools` | 6 | Properties, methods, signals, batch |
-| `editor_tools` | 5 | Screenshots, play/stop, selection, error scan |
-| `file_tools` | 5 | Read, write, delete, list, search |
+| `editor_tools` | 10 | Screenshots, play/stop, selection, scene/project management |
+| `file_tools` | 9 | Read, write, create, delete, rename, search, resources |
+| `runtime_tools` | 8 | Game screenshots, scene tree, execute, input sim, props |
+| `navigation_tools` | 3 | Nav regions, navmesh baking, nav agents |
 
-**Total: 28 tools**
+**Total: 52 tools**
 
 ## Adding Custom Tools
 

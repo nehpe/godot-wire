@@ -5,7 +5,7 @@ signal send_response(client_id: int, data: String)
 
 const MCP_VERSION := "2025-03-26"
 const SERVER_NAME := "GodotWire"
-const SERVER_VERSION := "0.1.0"
+const SERVER_VERSION := "0.5.0"
 
 var _registry: ToolRegistry
 var _initialized: bool = false
