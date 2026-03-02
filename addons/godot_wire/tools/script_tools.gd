@@ -71,7 +71,7 @@ func _execute_gdscript(args: Dictionary) -> Dictionary:
 	if code.is_empty():
 		return _error("No code provided")
 	var script := GDScript.new()
-	var wrapped := "extends RefCounted\nfunc _run():\n"
+	var wrapped := "extends RefCounted\nvar _ei\nfunc _run():\n"
 	for line in code.split("\n"):
 		wrapped += "\t" + line + "\n"
 	script.source_code = wrapped
@@ -79,6 +79,7 @@ func _execute_gdscript(args: Dictionary) -> Dictionary:
 	if err != OK:
 		return _error("Script compilation error: %s" % error_string(err))
 	var obj = script.new()
+	obj._ei = _get_editor_interface()
 	var result = obj._run()
 	if result == null:
 		return _success("Executed successfully (no return value)")
