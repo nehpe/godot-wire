@@ -8,9 +8,15 @@ const DEFAULT_PORT := 6500
 var _server: GodotWireServer
 var _protocol: GodotWireProtocol
 var _registry: ToolRegistry
+var _bridge: GameBridge
 
 func _enter_tree() -> void:
 	_init_settings()
+	_bridge = GameBridge.new()
+	_bridge.name = "GameBridge"
+	add_child(_bridge)
+	_bridge.start()
+
 	_registry = ToolRegistry.new()
 	_load_tool_modules()
 	_server = GodotWireServer.new()
@@ -27,11 +33,16 @@ func _enter_tree() -> void:
 func _exit_tree() -> void:
 	if _server and _server.is_running():
 		_server.stop()
+	if _bridge:
+		_bridge.stop()
+		_bridge.queue_free()
 	print("GodotWire: Plugin unloaded")
 
 func _process(_delta: float) -> void:
 	if _server:
 		_server.poll()
+	if _bridge:
+		_bridge.poll()
 
 func _on_message_received(client_id: int, body: String) -> void:
 	_protocol.handle_message(client_id, body)
@@ -49,7 +60,7 @@ func _load_tool_modules() -> void:
 			var script_path := tools_dir + file_name
 			var script := load(script_path)
 			if script:
-				var instance = script.new(self, null)
+				var instance = script.new(self, _bridge)
 				if instance is GodotWireTool:
 					_registry.register_module(instance)
 				else:
