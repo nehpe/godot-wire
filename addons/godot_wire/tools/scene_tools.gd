@@ -237,10 +237,10 @@ func _instantiate_scene(args: Dictionary) -> Dictionary:
 	var parent := root if parent_path.is_empty() else _resolve_node(parent_path)
 	if parent == null:
 		return _error("Parent node not found: %s" % parent_path)
-	var scene := load(scene_path)
+	var scene: PackedScene = load(scene_path) as PackedScene
 	if scene == null:
 		return _error("Could not load scene: %s" % scene_path)
-	var instance := scene.instantiate()
+	var instance: Node = scene.instantiate()
 	if not node_name.is_empty():
 		instance.name = node_name
 	parent.add_child(instance)
