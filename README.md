@@ -1,6 +1,10 @@
-# GodotWire
+<p align="center">
+  <img src="godot-wire.png" alt="GodotWire" width="400">
+</p>
 
-MCP server for Godot Engine — wires AI to your editor and running game.
+<h1 align="center">GodotWire</h1>
+
+<p align="center">MCP server for Godot Engine — wires AI to your editor and running game.</p>
 
 ## What is this?
 
