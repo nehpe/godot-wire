@@ -1,0 +1,14 @@
+# Godot
+.godot/
+*.import
+export_presets.cfg
+
+# OS
+Thumbs.db
+.DS_Store
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
