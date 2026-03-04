@@ -1,3 +1,4 @@
+@tool
 extends GodotWireTool
 ## File system tools: read, write, delete, list, and search.
 

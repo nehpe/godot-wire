@@ -1,3 +1,4 @@
+@tool
 extends GodotWireTool
 ## Runtime tools that communicate with the running game via TCP bridge.
 

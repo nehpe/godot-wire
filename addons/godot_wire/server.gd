@@ -239,6 +239,18 @@ func _handle_post(client: ClientState, body: String) -> void:
 		message_received.emit(client.id, body)
 
 func _handle_get(client: ClientState) -> void:
+	# Health check endpoint
+	if client.path == "/health":
+		var body := JSON.stringify({
+			"status": "ok",
+			"server": "GodotWire",
+			"version": "0.6.0",
+			"session_id": _session_id,
+			"sse_clients": _sse_clients.size(),
+			"uptime_ms": Time.get_ticks_msec()
+		})
+		_send_http_response(client, body)
+		return
 	if client.path != "/mcp":
 		_send_raw(client, "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n")
 		return

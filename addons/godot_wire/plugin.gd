@@ -199,11 +199,14 @@ func _load_tool_modules() -> void:
 			var script_path := tools_dir + file_name
 			var script := load(script_path)
 			if script:
-				var instance = script.new(self, _bridge)
-				if instance is GodotWireTool:
-					_registry.register_module(instance)
+				if not script.can_instantiate():
+					push_error("GodotWire: %s has parse errors, skipping" % file_name)
 				else:
-					push_warning("GodotWire: %s does not extend GodotWireTool" % file_name)
+					var instance = script.new(self, _bridge)
+					if instance is GodotWireTool:
+						_registry.register_module(instance)
+					else:
+						push_warning("GodotWire: %s does not extend GodotWireTool" % file_name)
 		file_name = dir.get_next()
 	dir.list_dir_end()
 

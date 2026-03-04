@@ -1,3 +1,4 @@
+@tool
 extends GodotWireTool
 ## Navigation region, navmesh baking, and navigation agent tools.
 
