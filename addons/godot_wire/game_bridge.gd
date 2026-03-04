@@ -5,6 +5,7 @@ class_name GameBridge extends Node
 
 signal game_connected
 signal game_disconnected
+signal console_output(entries: Array)
 
 const BRIDGE_PORT := 6501
 const BIND_HOST := "127.0.0.1"
@@ -112,10 +113,15 @@ func _poll_client() -> void:
 			continue
 		var msg: Dictionary = json.data
 		var req_id = msg.get("id")
+		# Check for console output messages from game autoload
+		var result = msg.get("result", {})
+		if result is Dictionary and result.get("type") == "console_output":
+			console_output.emit(result.get("entries", []))
+			continue
 		if req_id != null and _pending_requests.has(int(req_id)):
-			_pending_requests[int(req_id)]["result"] = msg.get("result", {})
+			_pending_requests[int(req_id)]["result"] = result
 		elif not _pending_requests.has(int(req_id)):
-			_pending_requests[int(req_id)] = {"result": msg.get("result", {}), "timestamp": Time.get_ticks_msec()}
+			_pending_requests[int(req_id)] = {"result": result, "timestamp": Time.get_ticks_msec()}
 
 func _check_timeouts() -> void:
 	var now := Time.get_ticks_msec()

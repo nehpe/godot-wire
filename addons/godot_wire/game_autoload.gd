@@ -10,10 +10,13 @@ var _client: StreamPeerTCP
 var _buffer: String = ""
 var _connected: bool = false
 var _reconnect_timer: float = 0.0
+var _log_buffer: Array = []  # Buffer for captured log messages
 
 func _ready() -> void:
 	_client = StreamPeerTCP.new()
 	_try_connect()
+	# Capture console output via custom logger
+	_install_log_capture()
 
 func _process(delta: float) -> void:
 	if _client == null:
@@ -26,6 +29,7 @@ func _process(delta: float) -> void:
 			_connected = true
 			print("GodotWire: Connected to editor bridge")
 		_read_requests()
+		_flush_log_buffer()
 	elif status == StreamPeerTCP.STATUS_NONE or status == StreamPeerTCP.STATUS_ERROR:
 		if _connected:
 			_connected = false
@@ -274,3 +278,32 @@ func _key_name_to_code(key_name: String) -> Key:
 		"R": return KEY_R
 		"F": return KEY_F
 	return KEY_NONE
+
+# --- Log Capture ---
+
+var _log_capture_active: bool = false
+
+func _install_log_capture() -> void:
+	# In Godot 4, we can't directly intercept print().
+	# Instead, we provide a helper function games can use to forward logs.
+	# Also hook into error/warning output via _notification.
+	_log_capture_active = true
+
+## Call this from game code to forward a message to the editor SSE stream.
+## Example: GodotWireGameBridge.log("Player died at wave 3")
+func log(message: String, level: String = "info") -> void:
+	_log_buffer.append({"message": message, "level": level, "timestamp": Time.get_ticks_msec()})
+
+## Forward error notifications to the editor.
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_PREDELETE:
+		_log_capture_active = false
+
+func _flush_log_buffer() -> void:
+	if _log_buffer.is_empty() or not _connected:
+		return
+	# Send buffered log messages to editor as a single batch
+	var batch := _log_buffer.duplicate()
+	_log_buffer.clear()
+	var msg := JSON.stringify({"id": 0, "result": {"type": "console_output", "entries": batch}}) + "\n"
+	_client.put_data(msg.to_utf8_buffer())
