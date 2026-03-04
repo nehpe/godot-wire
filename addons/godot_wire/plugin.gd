@@ -22,6 +22,7 @@ func _enter_tree() -> void:
 	_server = GodotWireServer.new()
 	_protocol = GodotWireProtocol.new(_registry)
 	_server.message_received.connect(_on_message_received)
+	_server.sse_message_received.connect(_on_message_received)
 	_protocol.send_response.connect(_server.send_response)
 
 	if _get_setting(SETTING_AUTO_START, true):
