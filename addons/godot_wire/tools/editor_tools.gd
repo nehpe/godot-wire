@@ -1,3 +1,4 @@
+@tool
 extends GodotWireTool
 ## Editor state, screenshots, play/stop controls, selection, project settings, and scene management.
 

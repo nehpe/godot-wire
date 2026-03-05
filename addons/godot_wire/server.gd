@@ -1,12 +1,15 @@
 class_name GodotWireServer extends RefCounted
 ## Streamable HTTP server implementing MCP 2025-03-26 transport.
-## Single endpoint: POST/GET on /mcp
+## Single endpoint: POST/GET/DELETE on /mcp
+## Supports JSON responses and Server-Sent Events (SSE) streaming.
 
 signal message_received(client_id: int, body: String)
+signal sse_message_received(client_id: int, body: String)
 signal client_connected(client_id: int)
 signal client_disconnected(client_id: int)
 
 const BIND_HOST := "127.0.0.1"
+const SSE_KEEPALIVE_INTERVAL := 15000  # ms between keepalive comments
 
 var _tcp_server: TCPServer
 var _port: int = 6500
@@ -14,7 +17,9 @@ var _running: bool = false
 var _next_client_id: int = 1
 var _clients: Dictionary = {}  # client_id -> ClientState
 var _pending_responses: Dictionary = {}  # client_id -> response string
+var _pending_sse_events: Dictionary = {}  # client_id -> Array of SSE event strings
 var _session_id: String = ""
+var _sse_clients: Dictionary = {}  # client_id -> ClientState (long-lived GET streams)
 
 class ClientState:
 	var id: int
@@ -26,12 +31,15 @@ class ClientState:
 	var content_length: int = 0
 	var headers: Dictionary = {}
 	var is_sse: bool = false
+	var is_sse_post: bool = false  # POST with Accept: text/event-stream
+	var last_keepalive: int = 0
 	var created_at: int = 0
 
 	func _init(p_id: int, p_peer: StreamPeerTCP) -> void:
 		id = p_id
 		peer = p_peer
 		created_at = Time.get_ticks_msec()
+		last_keepalive = created_at
 
 func start(port: int = 6500) -> Error:
 	_port = port
@@ -47,6 +55,10 @@ func start(port: int = 6500) -> Error:
 
 func stop() -> void:
 	_running = false
+	for client_id in _sse_clients:
+		var client: ClientState = _sse_clients[client_id]
+		client.peer.disconnect_from_host()
+	_sse_clients.clear()
 	for client_id in _clients:
 		var client: ClientState = _clients[client_id]
 		client.peer.disconnect_from_host()
@@ -60,9 +72,30 @@ func poll() -> void:
 		return
 	_accept_connections()
 	_poll_clients()
+	_poll_sse_clients()
 
 func send_response(client_id: int, data: String) -> void:
+	# Check if this is an SSE POST client — send as SSE event instead
+	if _clients.has(client_id) and _clients[client_id].is_sse_post:
+		if not _pending_sse_events.has(client_id):
+			_pending_sse_events[client_id] = []
+		_pending_sse_events[client_id].append(data)
+		return
 	_pending_responses[client_id] = data
+
+## Send an SSE event to a specific GET stream client.
+func send_sse_event(client_id: int, data: String) -> void:
+	if _sse_clients.has(client_id):
+		_write_sse_event(_sse_clients[client_id], data)
+
+## Broadcast an SSE event to all connected GET stream clients.
+func broadcast_sse_event(data: String) -> void:
+	for client_id in _sse_clients:
+		_write_sse_event(_sse_clients[client_id], data)
+
+## Get the number of active SSE stream clients.
+func get_sse_client_count() -> int:
+	return _sse_clients.size()
 
 func is_running() -> bool:
 	return _running
@@ -99,8 +132,17 @@ func _poll_clients() -> void:
 				client.buffer += data[1].get_string_from_utf8()
 				_try_parse(client)
 
-		# Send pending response
-		if _pending_responses.has(client_id):
+		# Send pending SSE events for SSE POST clients
+		if client.is_sse_post and _pending_sse_events.has(client_id):
+			var events: Array = _pending_sse_events[client_id]
+			for event_data in events:
+				_write_sse_event(client, event_data)
+			_pending_sse_events.erase(client_id)
+			# Close the SSE POST stream after sending the response
+			to_remove.append(client_id)
+
+		# Send pending JSON response for regular POST clients
+		if not client.is_sse_post and _pending_responses.has(client_id):
 			_send_http_response(client, _pending_responses[client_id])
 			_pending_responses.erase(client_id)
 			to_remove.append(client_id)
@@ -109,6 +151,37 @@ func _poll_clients() -> void:
 		if _clients.has(cid):
 			_clients[cid].peer.disconnect_from_host()
 			_clients.erase(cid)
+			_pending_sse_events.erase(cid)
+			client_disconnected.emit(cid)
+
+## Poll long-lived SSE GET stream clients — send keepalives and detect disconnects.
+func _poll_sse_clients() -> void:
+	var to_remove: Array[int] = []
+	var now := Time.get_ticks_msec()
+	for client_id in _sse_clients:
+		var client: ClientState = _sse_clients[client_id]
+		var peer := client.peer
+		peer.poll()
+
+		var status := peer.get_status()
+		if status == StreamPeerTCP.STATUS_ERROR or status == StreamPeerTCP.STATUS_NONE:
+			to_remove.append(client_id)
+			continue
+		if status != StreamPeerTCP.STATUS_CONNECTED:
+			continue
+
+		# Send keepalive comment to prevent connection timeout
+		if now - client.last_keepalive > SSE_KEEPALIVE_INTERVAL:
+			var err := peer.put_data(":keepalive\n\n".to_utf8_buffer())
+			if err != OK:
+				to_remove.append(client_id)
+			else:
+				client.last_keepalive = now
+
+	for cid in to_remove:
+		if _sse_clients.has(cid):
+			_sse_clients[cid].peer.disconnect_from_host()
+			_sse_clients.erase(cid)
 			client_disconnected.emit(cid)
 
 func _try_parse(client: ClientState) -> void:
@@ -155,14 +228,44 @@ func _handle_post(client: ClientState, body: String) -> void:
 	if client.path != "/mcp":
 		_send_raw(client, "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n")
 		return
-	message_received.emit(client.id, body)
+	var accept := client.headers.get("accept", "")
+	if accept.find("text/event-stream") != -1:
+		# Client wants SSE streaming response
+		client.is_sse_post = true
+		_send_sse_headers(client)
+		sse_message_received.emit(client.id, body)
+	else:
+		# Standard JSON response
+		message_received.emit(client.id, body)
 
 func _handle_get(client: ClientState) -> void:
+	# Health check endpoint
+	if client.path == "/health":
+		var body := JSON.stringify({
+			"status": "ok",
+			"server": "GodotWire",
+			"version": "0.6.0",
+			"session_id": _session_id,
+			"sse_clients": _sse_clients.size(),
+			"uptime_ms": Time.get_ticks_msec()
+		})
+		_send_http_response(client, body)
+		return
 	if client.path != "/mcp":
 		_send_raw(client, "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n")
 		return
-	# SSE upgrade — for now return 405 (Phase 2: implement SSE streaming)
-	_send_raw(client, "HTTP/1.1 405 Method Not Allowed\r\nContent-Length: 0\r\n\r\n")
+	# Validate session ID if one exists and client provided one
+	var client_session := client.headers.get("mcp-session-id", "")
+	if client_session != "" and client_session != _session_id:
+		_send_raw(client, "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n")
+		return
+	# Open SSE stream — move client to long-lived SSE pool
+	client.is_sse = true
+	_send_sse_headers(client)
+	# Move from _clients to _sse_clients (poll loop will skip removal)
+	_clients.erase(client.id)
+	_sse_clients[client.id] = client
+	client.last_keepalive = Time.get_ticks_msec()
 
 func _handle_options(client: ClientState) -> void:
 	var resp := "HTTP/1.1 204 No Content\r\n"
@@ -174,8 +277,28 @@ func _handle_options(client: ClientState) -> void:
 	_send_raw(client, resp)
 
 func _handle_delete(client: ClientState) -> void:
-	# Session termination
+	# Session termination — close all SSE streams
+	for cid in _sse_clients:
+		_sse_clients[cid].peer.disconnect_from_host()
+	_sse_clients.clear()
 	_send_raw(client, "HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n")
+
+## Send SSE response headers to initiate a text/event-stream connection.
+func _send_sse_headers(client: ClientState) -> void:
+	var resp := "HTTP/1.1 200 OK\r\n"
+	resp += "Content-Type: text/event-stream\r\n"
+	resp += "Cache-Control: no-cache\r\n"
+	resp += "Connection: keep-alive\r\n"
+	resp += "Access-Control-Allow-Origin: *\r\n"
+	resp += "Access-Control-Expose-Headers: Mcp-Session-Id\r\n"
+	resp += "Mcp-Session-Id: %s\r\n" % _session_id
+	resp += "\r\n"
+	client.peer.put_data(resp.to_utf8_buffer())
+
+## Write a single SSE event to a client. Format: "event: message\ndata: {json}\n\n"
+func _write_sse_event(client: ClientState, json_data: String) -> void:
+	var event := "event: message\ndata: %s\n\n" % json_data
+	client.peer.put_data(event.to_utf8_buffer())
 
 func _send_http_response(client: ClientState, json_body: String) -> void:
 	var body_bytes := json_body.to_utf8_buffer()

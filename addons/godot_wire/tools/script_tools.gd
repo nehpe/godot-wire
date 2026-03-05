@@ -1,3 +1,4 @@
+@tool
 extends GodotWireTool
 ## Script execution, creation, editing, and error checking tools.
 

@@ -1,3 +1,4 @@
+@tool
 class_name GodotWireTool extends RefCounted
 ## Abstract base class for all GodotWire tool modules.
 ## Subclasses implement get_tools() and call_tool() to register MCP tools.

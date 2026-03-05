@@ -1,3 +1,4 @@
+@tool
 extends GodotWireTool
 ## Scene tree inspection and node management tools.
 
@@ -235,8 +236,13 @@ func _create_node(args: Dictionary) -> Dictionary:
 	if node == null:
 		return _error("Invalid node type: %s" % node_type)
 	node.name = node_name
-	parent.add_child(node)
-	_set_owner_recursive(node, root)
+	var undo := plugin.get_undo_redo()
+	undo.create_action("Create %s [%s]" % [node_name, node_type])
+	undo.add_do_method(parent, "add_child", node)
+	undo.add_do_method(self, "_set_owner_recursive", node, root)
+	undo.add_do_reference(node)
+	undo.add_undo_method(parent, "remove_child", node)
+	undo.commit_action()
 	return _success("Created %s [%s] under %s" % [node_name, node_type, parent.name])
 
 func _delete_node(args: Dictionary) -> Dictionary:
@@ -248,8 +254,14 @@ func _delete_node(args: Dictionary) -> Dictionary:
 	if node == root:
 		return _error("Cannot delete the scene root")
 	var node_name := str(node.name)
-	node.get_parent().remove_child(node)
-	node.queue_free()
+	var parent := node.get_parent()
+	var undo := plugin.get_undo_redo()
+	undo.create_action("Delete %s" % node_name)
+	undo.add_do_method(parent, "remove_child", node)
+	undo.add_undo_method(parent, "add_child", node)
+	undo.add_undo_method(self, "_set_owner_recursive", node, root)
+	undo.add_undo_reference(node)
+	undo.commit_action()
 	return _success("Deleted node: %s" % node_name)
 
 func _duplicate_node(args: Dictionary) -> Dictionary:
@@ -260,9 +272,15 @@ func _duplicate_node(args: Dictionary) -> Dictionary:
 	var dup := node.duplicate()
 	var new_name: String = args.get("new_name", str(node.name) + "_copy")
 	dup.name = new_name
-	node.get_parent().add_child(dup)
+	var parent := node.get_parent()
 	var root := _get_edited_scene_root()
-	_set_owner_recursive(dup, root)
+	var undo := plugin.get_undo_redo()
+	undo.create_action("Duplicate %s" % node.name)
+	undo.add_do_method(parent, "add_child", dup)
+	undo.add_do_method(self, "_set_owner_recursive", dup, root)
+	undo.add_do_reference(dup)
+	undo.add_undo_method(parent, "remove_child", dup)
+	undo.commit_action()
 	return _success("Duplicated %s as %s" % [node.name, new_name])
 
 func _reparent_node(args: Dictionary) -> Dictionary:
@@ -275,10 +293,16 @@ func _reparent_node(args: Dictionary) -> Dictionary:
 	if new_parent == null:
 		return _error("New parent not found: %s" % new_parent_path)
 	var old_parent := node.get_parent()
-	old_parent.remove_child(node)
-	new_parent.add_child(node)
 	var root := _get_edited_scene_root()
-	_set_owner_recursive(node, root)
+	var undo := plugin.get_undo_redo()
+	undo.create_action("Reparent %s to %s" % [node.name, new_parent.name])
+	undo.add_do_method(old_parent, "remove_child", node)
+	undo.add_do_method(new_parent, "add_child", node)
+	undo.add_do_method(self, "_set_owner_recursive", node, root)
+	undo.add_undo_method(new_parent, "remove_child", node)
+	undo.add_undo_method(old_parent, "add_child", node)
+	undo.add_undo_method(self, "_set_owner_recursive", node, root)
+	undo.commit_action()
 	return _success("Moved %s from %s to %s" % [node.name, old_parent.name, new_parent.name])
 
 func _instantiate_scene(args: Dictionary) -> Dictionary:

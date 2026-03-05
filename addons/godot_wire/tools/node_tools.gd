@@ -1,3 +1,4 @@
+@tool
 extends GodotWireTool
 ## Node property manipulation, method calling, and signal tools.
 
@@ -116,7 +117,12 @@ func _set_node_property(args: Dictionary) -> Dictionary:
 	if node == null:
 		return _error("Node not found: %s" % path)
 	var converted = _convert_value(node, prop, value)
-	node.set(prop, converted)
+	var old_value = node.get(prop)
+	var undo := plugin.get_undo_redo()
+	undo.create_action("Set %s.%s" % [node.name, prop])
+	undo.add_do_property(node, prop, converted)
+	undo.add_undo_property(node, prop, old_value)
+	undo.commit_action()
 	return _success("Set %s.%s = %s" % [node.name, prop, str(converted)])
 
 func _get_node_property(args: Dictionary) -> Dictionary:
